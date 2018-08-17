@@ -1,0 +1,220 @@
+<DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" type="text/css" href="http://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    </head>
+
+    <body>
+        <form>
+            <input name="user" id="user"/>
+            <br/>
+            <select name="repo" id="repo">
+            </select>
+            <br/>
+            <select name="branch" id="branch">
+            </select>
+            <br/>
+            <button type="button" id="launch">Launch</button>
+        </form>
+    
+        <p id="percent" count="0"></p>
+        <ul id="listTopLevel">
+        </ul>
+    
+        <script src="http://code.jquery.com/jquery-3.3.1.min.js"></script>
+        <script src="http://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+        <script>
+            var token = 'token ';
+            var commitFullList = [];
+            var commitList = [];
+            var committer = [];
+            function addToList(element) {
+                
+                commitFullList.push(element);
+                
+                var login = '';
+                if (element.author == null) {
+                    return;
+                }
+                
+                if (commitList[element.author.login] == undefined) {
+                    commitList[element.author.login] = [];
+                    committer[element.author.login] = {
+                        login: element.author.login,
+                        additions: 0,
+                        deletions: 0,
+                        display: function(){
+                            $('#'+this.login+' > .additions').html('Additions : '+this.additions+' ');
+                            $('#'+this.login+' > .deletions').html('Deletions : '+this.deletions+' ');
+                            $('#'+this.login+' > .delta').html('Delta : '+(this.additions - this.deletions)+' ');
+                        }
+                    };
+                }
+                commitList[element.author.login].push(element);
+            }
+            
+            function displayList(user, repo, branch) {
+                for (var key in commitList) {
+                    
+                    var listTopLevel = $('<div></div>').addClass('accordion');
+                    var percent = (100 / commitFullList.length)*commitList[key].length;
+                    listTopLevel.append(
+                        $('<h3></h3>').html(key + ' : ' + commitList[key].length + ' (' + percent + '%)').attr('id', key).append(
+                            $('<span></span>').addClass('additions')
+                        ).append(
+                            $('<span></span>').addClass('deletions')
+                        ).append(
+                            $('<span></span>').addClass('delta')
+                        )
+                    );
+                    
+                    var commitShaList = $('<ul></lu>');
+                    $(commitList[key]).each(function(index, element){
+                        
+                        $.get({
+                            url: 'https://api.github.com/repos/'+user+'/'+repo+'/commits/'+element.sha,
+                            beforeSend: function(xhr){
+                                xhr.setRequestHeader('Authorization', token);
+                            }
+                        }).done(function(data){
+                            $('#'+data.sha).append(
+                                $('<span></span>').html(' Append : '+data.stats.additions+', Deletions : '+data.stats.deletions).css('color', 'grey')
+                            ).append(
+                                $('<br/>')
+                            ).append(
+                                $('<span></span>').html(' '+data.commit.author.date)
+                            ).append(
+                                $('<br/>')
+                            ).append(
+                                $('<span></span>').html(' '+data.commit.message)
+                            ).append(
+                                $('<br/>')
+                            ).append(
+                                $('<a></a>').html('view').attr('href', ' '+data.html_url).attr('target', '_blank')
+                            );
+                            
+                            committer[data.author.login].additions += data.stats.additions;
+                            committer[data.author.login].deletions += data.stats.deletions;
+                            committer[data.author.login].display();
+                            $('.accordion').accordion('refresh');
+                        });
+                    
+                        commitShaList.append($('<li></li>').html(element.sha).attr('id', element.sha).css('margin-bottom', '2em'));
+                    });
+                    listTopLevel.append($('<div></div>').append(commitShaList));
+                    
+                    $('#listTopLevel').append(listTopLevel);
+                }
+                
+                $('.accordion').accordion({
+                    collapsible: true,
+                    active: false
+                });
+            }
+        
+            function getCommits(user, repo, branch, page) {
+                $.get({
+                    url: 'https://api.github.com/repos/'+user+'/'+repo+'/commits?sha='+branch+'&per_page=100&page='+page,
+                    beforeSend: function(xhr){
+                        xhr.setRequestHeader('Authorization', token);
+                    }
+                }).done(function(data){
+                    $(data).each(function(index, element){
+                        addToList(element);
+                    });
+                    if (data.length == 100) {
+                        getCommits(user, repo, branch, page + 1);
+                    } else {
+                        displayList(user, repo, branch);
+                    }
+                });
+            }
+            
+            function launch(){
+                
+                commitFullList = [];
+                commitList = [];
+                committer = [];
+            
+                $('#listTopLevel').html('');
+                getCommits($('#user').val(), $('#repo').val(), $('#branch').val(), 1);
+            }
+            
+            function format(){
+                $('.accordion').accordion({
+                    collapsible: true,
+                    active: false
+                });
+            }
+            
+            function getBranchs(){
+                var user = $('#user').val();
+                var repo = $('#repo').val();
+
+                $.get({
+                    url: 'https://api.github.com/repos/'+user+'/'+repo+'/branches',
+                    beforeSend: function(xhr){
+                        xhr.setRequestHeader('Authorization', token);
+                    }
+                }).done(function(data){
+                    $('#branch').html('');
+                    
+                    $(data).each(function(index, element){
+                        $('#branch').append(
+                            $('<option></option>').val(element.name).html(element.name)
+                        );
+                    });
+                });
+            }
+            
+            function getRepos(){
+                var user = $('#user').val();
+
+                $.get({
+                    url: 'https://api.github.com/users/'+user+'/repos',
+                    beforeSend: function(xhr){
+                        xhr.setRequestHeader('Authorization', token);
+                    }
+                }).done(function(data){
+                    $('#repo').html('');
+                    
+                    $(data).each(function(index, element){console.log(element);
+                        $('#repo').append(
+                            $('<option></option>').val(element.name).html(element.name)
+                        );
+                    });
+                });
+            }
+            $("#launch").on('click', launch);
+            $("#repo").on('change', getBranchs);
+            $("#user").on('change', getRepos);
+            $("#format").on('click', function(){
+                $('.accordion').accordion({
+                    collapsible: true,
+                    active: false
+                });
+            });
+            
+            
+            
+            function getUrlVars()
+            {
+                var vars = [], hash;
+                var hashes = window.location.href.slice(window.location.href.indexOf('?') + 1).split('&');
+                for(var i = 0; i < hashes.length; i++)
+                {
+                    hash = hashes[i].split('=');
+                    vars.push(hash[0]);
+                    vars[hash[0]] = hash[1];
+                }
+                return vars;
+            }
+            
+            var queryUser = getUrlVars()['user'];
+            if (queryUser !== undefined) {
+                $('#user').val(queryUser).trigger('change');
+            }
+                
+        </script>
+    </body>
+</html>
